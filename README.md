@@ -11,6 +11,7 @@ A Spring Boot application that provides user presence management with mutual TLS
 - **PostgreSQL Database**: Persistent storage of user information
 - **RESTful API**: Clean REST endpoints with OpenAPI/Swagger documentation
 - **Java Test Client**: Standalone client for testing mTLS connections and UDP broadcasts
+- **Go UDP Listener** (Bonus): Alternative UDP listener implementation in Go with configurable port
 
 ## Architecture
 
@@ -40,6 +41,7 @@ UDP broadcasts use a custom binary format:
 - Maven 3.6+
 - PostgreSQL 16
 - OpenSSL (for certificate generation)
+- Go 1.21+ (optional, for bonus UDP listener) - [Download from golang.org](https://golang.org/dl/)
 
 ## Setup
 
@@ -146,11 +148,20 @@ The server starts on `https://localhost:8443`
 
 ### Test with UDP Listener
 
-In a separate terminal, start the UDP listener:
+Choose one of the UDP listeners:
 
+#### Option 1: Java Listener
 ```bash
 cd client
 java UdpBroadcastListener.java
+```
+
+#### Option 2: Go Listener (Bonus)
+```bash
+# Install Go if not already installed
+go run udp_listener.go
+# Or specify custom port:
+go run udp_listener.go -port 6667
 ```
 
 ### Test with mTLS Client
