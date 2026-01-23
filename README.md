@@ -31,6 +31,11 @@ UDP broadcasts use a custom binary format:
 
 ## Prerequisites
 
+### For Docker Setup (Recommended)
+- Docker and Docker Compose
+- OpenSSL (for certificate generation)
+
+### For Manual Setup
 - Java 25
 - Maven 3.6+
 - PostgreSQL 16
@@ -38,20 +43,41 @@ UDP broadcasts use a custom binary format:
 
 ## Setup
 
-### 1. Database Setup
+### Option 1: Docker Setup (Recommended)
+
+1. **Generate Certificates** (required for Docker):
+```bash
+# On Linux/Mac
+./scripts/generate.sh
+
+# On Windows (PowerShell)
+.\scripts\generate.ps1
+```
+
+2. **Run with Docker Compose**:
+```bash
+docker compose up -d --build
+```
+
+This will start:
+- PostgreSQL database on port 5432
+- Spring Boot application on port 8443 with mTLS
+- Automatic UDP broadcasting on port 6667
+
+### Option 2: Manual Setup
+
+1. **Database Setup**
 
 Create a PostgreSQL database:
-
 ```sql
 CREATE DATABASE mtls_db;
 CREATE USER postgres WITH PASSWORD 'sibo1234';
 GRANT ALL PRIVILEGES ON DATABASE mtls_db TO postgres;
 ```
 
-### 2. Certificate Generation
+2. **Certificate Generation**
 
 Run the certificate generation script:
-
 ```bash
 # On Linux/Mac
 ./scripts/generate.sh
@@ -65,8 +91,7 @@ This creates:
 - Server certificate and keystore
 - Client certificate and keystore
 
-### 3. Build the Application
-
+3. **Build the Application**
 ```bash
 mvn clean install
 ```
@@ -103,7 +128,15 @@ spring.datasource.password=sibo1234
 
 ## Running the Application
 
-### Start the Server
+### Docker (Recommended)
+
+After running `docker-compose up --build`, the services will be available at:
+- Spring Boot application: `https://localhost:8443`
+- PostgreSQL database: `localhost:5432`
+
+### Manual Startup
+
+#### Start the Server
 
 ```bash
 mvn spring-boot:run
