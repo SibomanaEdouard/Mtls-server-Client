@@ -74,7 +74,6 @@ public class UserController {
         }
     }
 
-    @PostMapping("/api/update")
     @PatchMapping("/api/update")
     @Operation(summary = "Update user presence", description = "Updates the user's last seen time, IP address, and port based on the client certificate. Requires mTLS authentication.")
     @ApiResponses(value = {
@@ -139,9 +138,23 @@ public class UserController {
                 "jakarta.servlet.request.X509Certificate"
         );
 
+        // Try fallback for Tomcat-style attribute name
+        if (certs == null) {
+            certs = (X509Certificate[]) request.getAttribute(
+                    "javax.servlet.request.X509Certificate"
+            );
+        }
+
         System.out.println("Certs array: " + (certs == null ? "null" : certs.length));
 
         if (certs == null || certs.length == 0) {
+            // Debug: Print all request attributes
+            System.out.println("All request attributes:");
+            java.util.Enumeration<String> attrNames = request.getAttributeNames();
+            while (attrNames.hasMoreElements()) {
+                String name = attrNames.nextElement();
+                System.out.println("  " + name + " = " + request.getAttribute(name));
+            }
             return null;
         }
 

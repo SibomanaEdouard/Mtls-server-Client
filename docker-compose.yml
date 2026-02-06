@@ -1,15 +1,15 @@
-version: '3.8'
-
 services:
   postgres:
     image: postgres:16
     container_name: mtls-postgres
+    networks:
+      - app-network
     environment:
       POSTGRES_DB: mtls_db
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: sibo1234
     ports:
-      - "5432:5432"
+      - "5434:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
