@@ -1,5 +1,5 @@
 # Use OpenJDK 25 as base image
-FROM openjdk:25-jdk-slim
+FROM eclipse-temurin:25-jdk
 
 # Set working directory
 WORKDIR /app
@@ -16,7 +16,7 @@ COPY certs certs
 COPY ca-cert.pem ca-cert.pem
 
 # Build the application
-RUN ./mvnw clean package -DskipTests
+RUN chmod +x ./mvnw && ./mvnw clean package -DskipTests
 
 # Expose port
 EXPOSE 8443

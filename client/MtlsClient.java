@@ -1,11 +1,13 @@
 import javax.net.ssl.*;
 import java.io.*;
+import java.lang.reflect.Field;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.security.KeyStore;
+import java.security.SecureRandom;
 
 /**
- * mTLS Client that sends empty PATCH request to the server
+ * mTLS Client that sends requests to the server
  * Usage: java MtlsClient
  */
 public class MtlsClient {
@@ -13,56 +15,55 @@ public class MtlsClient {
     private static final String REGISTER_URL = "https://localhost:8443/api/register";
     private static final String UPDATE_URL = "https://localhost:8443/api/update";
     private static final String CLIENT_KEYSTORE_PATH = "../certs/client-keystore.p12";
-    private static final String TRUSTSTORE_PATH = "../certs/ca-cert.pem";
+    private static final String TRUSTSTORE_PATH = "../client-truststore.p12";
     private static final String KEYSTORE_PASSWORD = "changeit";
 
     public static void main(String[] args) {
         try {
             System.out.println("=== mTLS Client Starting ===");
 
-            // Load client certificate and key
+            // Create SSL context with client certificate and truststore
+            SSLContext sslContext = SSLContext.getInstance("TLS");
+            
+            // Load keystore with client certificate
             KeyStore keyStore = KeyStore.getInstance("PKCS12");
             try (FileInputStream fis = new FileInputStream(CLIENT_KEYSTORE_PATH)) {
                 keyStore.load(fis, KEYSTORE_PASSWORD.toCharArray());
             }
-
-            // Initialize KeyManager with client certificate
-            KeyManagerFactory keyManagerFactory = KeyManagerFactory.getInstance(
-                    KeyManagerFactory.getDefaultAlgorithm()
-            );
-            keyManagerFactory.init(keyStore, KEYSTORE_PASSWORD.toCharArray());
-
-            // Load CA certificate for trusting server
-            KeyStore trustStore = KeyStore.getInstance(KeyStore.getDefaultType());
-            trustStore.load(null, null);
-
-            // Read CA certificate
+            
+            // Initialize KeyManagerFactory
+            KeyManagerFactory kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
+            kmf.init(keyStore, KEYSTORE_PASSWORD.toCharArray());
+            
+            // Load truststore with CA certificate
+            KeyStore trustStore = KeyStore.getInstance("PKCS12");
             try (FileInputStream fis = new FileInputStream(TRUSTSTORE_PATH)) {
-                java.security.cert.CertificateFactory cf =
-                        java.security.cert.CertificateFactory.getInstance("X.509");
-                java.security.cert.Certificate caCert = cf.generateCertificate(fis);
-                trustStore.setCertificateEntry("ca", caCert);
+                trustStore.load(fis, KEYSTORE_PASSWORD.toCharArray());
+            }
+            
+            // Initialize TrustManagerFactory
+            TrustManagerFactory tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+            tmf.init(trustStore);
+            
+            // Initialize SSL context
+            sslContext.init(kmf.getKeyManagers(), tmf.getTrustManagers(), new SecureRandom());
+            
+            // Create socket factory and set as default
+            SSLSocketFactory socketFactory = sslContext.getSocketFactory();
+            HttpsURLConnection.setDefaultSSLSocketFactory(socketFactory);
+            
+            // Allow localhost hostname
+            HttpsURLConnection.setDefaultHostnameVerifier((hostname, session) -> 
+                hostname.equals("localhost") || hostname.equals("127.0.0.1"));
+
+            System.out.println("SSL Context initialized successfully");
+            System.out.println("TrustManager providers: " + tmf.getTrustManagers().length);
+            for (TrustManager tm : tmf.getTrustManagers()) {
+                System.out.println("  - " + tm.getClass().getName());
             }
 
-            // Initialize TrustManager
-            TrustManagerFactory trustManagerFactory = TrustManagerFactory.getInstance(
-                    TrustManagerFactory.getDefaultAlgorithm()
-            );
-            trustManagerFactory.init(trustStore);
-
-            // Create SSL context with both KeyManager and TrustManager
-            SSLContext sslContext = SSLContext.getInstance("TLS");
-            sslContext.init(
-                    keyManagerFactory.getKeyManagers(),
-                    trustManagerFactory.getTrustManagers(),
-                    new java.security.SecureRandom()
-            );
-
-            // Set as default SSL socket factory
-            HttpsURLConnection.setDefaultSSLSocketFactory(sslContext.getSocketFactory());
-
             // Register user first
-            System.out.println("Registering user...");
+            System.out.println("\nRegistering user...");
             URL registerUrl = new URL(REGISTER_URL);
             HttpsURLConnection registerConnection = (HttpsURLConnection) registerUrl.openConnection();
             registerConnection.setRequestMethod("POST");
@@ -83,6 +84,7 @@ public class MtlsClient {
                 System.out.println("User already exists, proceeding to update.");
             } else {
                 System.out.println("✗ Registration failed with code: " + registerResponseCode);
+                System.out.println("Response: " + readResponse(registerConnection));
             }
             registerConnection.disconnect();
 
@@ -92,12 +94,18 @@ public class MtlsClient {
 
             // Configure request
             connection.setRequestMethod("POST");
-            connection.setRequestProperty("X-HTTP-Method-Override", "PATCH");
-            connection.setDoOutput(false); // Empty body
+            connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
+            connection.setDoOutput(true);
             connection.setConnectTimeout(5000);
             connection.setReadTimeout(5000);
 
-            System.out.println("Sending POST request (PATCH override) to: " + UPDATE_URL);
+            // Send _method=PATCH as form data
+            String formData = "_method=PATCH";
+            try (OutputStream os = connection.getOutputStream()) {
+                os.write(formData.getBytes());
+            }
+
+            System.out.println("\nSending POST request (PATCH override) to: " + UPDATE_URL);
             System.out.println("Using client certificate with CN: user@example.com");
 
             // Send request
@@ -115,7 +123,7 @@ public class MtlsClient {
             } else if (responseCode == 403) {
                 System.out.println("✗ Forbidden - User not found in database");
             } else {
-                System.out.println("✗ Unexpected response code");
+                System.out.println("Response: " + readResponse(connection));
             }
 
             connection.disconnect();
@@ -123,6 +131,33 @@ public class MtlsClient {
         } catch (Exception e) {
             System.err.println("Error: " + e.getMessage());
             e.printStackTrace();
+        }
+    }
+
+    private static String readResponse(HttpURLConnection conn) throws IOException {
+        InputStream errorStream = conn.getErrorStream();
+        if (errorStream == null) {
+            InputStream inputStream = conn.getInputStream();
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream))) {
+                return reader.lines().reduce("", (a, b) -> a + b);
+            }
+        }
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(errorStream))) {
+            return reader.lines().reduce("", (a, b) -> a + b);
+        }
+    }
+
+    private static void enablePatchMethod() {
+        try {
+            Field methodsField = HttpURLConnection.class.getDeclaredField("methods");
+            methodsField.setAccessible(true);
+            String[] oldMethods = (String[]) methodsField.get(null);
+            String[] newMethods = new String[oldMethods.length + 1];
+            System.arraycopy(oldMethods, 0, newMethods, 0, oldMethods.length);
+            newMethods[oldMethods.length] = "PATCH";
+            methodsField.set(null, newMethods);
+        } catch (Exception e) {
+            System.err.println("Failed to enable PATCH method: " + e.getMessage());
         }
     }
 }
